@@ -9,8 +9,10 @@ is a small camera image of the road in front of it. Every step it:
   ACT      - steers toward the middle of the lane and moves forward
   FEEDBACK - the next camera frame shows whether the steering worked
 
-Run:   python lane_car.py
-Keys:  SPACE pause   R restart   Q quit
+Run:   python lane_car.py             (live demo, starts in scenario 2)
+       python lane_car.py 3           (start in scenario 3)
+       python lane_car.py --compare   (measure Basic vs Smart, no window)
+Keys:  1 / 2 / 3 load scenario   SPACE pause   R restart   Q quit
        T toggle dark tunnel   N toggle storm (world gets dark)
        B switch Basic/Smart brain   H auto-help (simulated human clicks for you)
 Mouse: when the car asks for help, click a white lane line in the
@@ -61,7 +63,7 @@ class Lighting:
         self.tunnel = tunnel        # (x_from, brightness): everything right of x_from is dark
         self.storm = storm          # (step, brightness): at that step the whole world dims
         self.storm_on = False
-        self.news = 'Daylight.'
+        self.news = 'A dark tunnel covers the right bend.' if tunnel else 'Daylight.'
         self._scene = None
 
     def update(self, step):
@@ -220,13 +222,16 @@ class Car:
     def thresholds(self, band):
         """Paint threshold for every row of the band.
         Basic: always the factory value. Smart: for each row, use the remembered
-        threshold whose light level is closest to that row's road brightness."""
+        threshold whose light level is closest to that row's road brightness -
+        but only thresholds that are still brighter than that road (sanity check)."""
         if self.brain == 'basic':
             return np.full(band.shape[0], FACTORY_THRESHOLD, np.float32)
         levels = np.array(list(self.memory))
         values = np.array(list(self.memory.values()), np.float32)
-        nearest = np.abs(row_light(band)[:, None] - levels[None, :]).argmin(axis=1)
-        return values[nearest]
+        road = row_light(band)[:, None]
+        distance = np.abs(road - levels[None, :])
+        distance[values[None, :] <= road + 1] = np.inf      # would mark the whole road as paint
+        return values[distance.argmin(axis=1)]
 
     def teach(self, u, v):
         """Novel feature, part 2: learn from ONE click at camera pixel (u, v)."""
@@ -261,7 +266,62 @@ def simulated_human(car):
 
 
 # =====================================================================
-# 5. DRAWING
+# 5. SCENARIOS AND MEASUREMENT
+# =====================================================================
+SCENARIOS = {
+    '1': ('Sunny day', lambda: Lighting()),
+    '2': ('Dark tunnel on the right bend', lambda: Lighting(tunnel=(680, 0.2))),
+    '3': ('Storm rolls in at step 300 (world changes)', lambda: Lighting(storm=(300, 0.3))),
+}
+
+
+def run_to_end(brain, lighting):
+    """Drive until finished/crashed; a simulated human answers help requests."""
+    car = Car(brain)
+    while car.status in ('driving', 'ASKING'):
+        if car.status == 'ASKING' and not simulated_human(car):
+            car.status = 'SAFE STOP'                 # too dark even for a human-taught threshold
+            car.why = 'Too dark to see the paint even with help. Staying stopped (safe).'
+            break
+        lighting.update(car.steps)
+        car.step(lighting.scene())
+    return car
+
+
+def random_lighting(rng):
+    """A random world: a tunnel of random size/darkness, and maybe a storm."""
+    tunnel = (int(rng.integers(560, 741)), float(rng.uniform(0.1, 0.4)))
+    storm = (int(rng.integers(100, 701)), float(rng.uniform(0.15, 0.5))) if rng.random() < 0.7 else None
+    return Lighting(tunnel=tunnel, storm=storm)
+
+
+def compare(trials=30):
+    """Run Basic and Smart on the 3 scenarios and on random worlds; print a table."""
+    def row(name, car):
+        lap1 = sum(1 for lap in car.clicks if lap == 0)
+        return (f'  {name:<44} {car.brain:<6} {car.status:<9} laps {car.laps:4.2f}  '
+                f'clicks {len(car.clicks)} (lap1 {lap1}, lap2 {len(car.clicks) - lap1})')
+    print('\nNamed scenarios')
+    for name, make in SCENARIOS.values():
+        for brain in ('basic', 'smart'):
+            print(row(name, run_to_end(brain, make())))
+    print(f'\n{trials} random worlds (random tunnel + 70% chance of a storm)')
+    for brain in ('basic', 'smart'):
+        rng = np.random.default_rng(7)               # same worlds for both brains
+        cars = [run_to_end(brain, random_lighting(rng)) for _ in range(trials)]
+        crashes = sum(c.status == 'OFF ROAD' for c in cars)
+        done = sum(c.status == 'FINISHED' for c in cars)
+        safe = sum(c.status == 'SAFE STOP' for c in cars)
+        lap1 = sum(sum(1 for lap in c.clicks if lap == 0) for c in cars)
+        lap2 = sum(len(c.clicks) for c in cars) - lap1
+        err = np.mean([np.mean(c.errors) for c in cars])
+        print(f'  {brain:<6} crashed {crashes}/{trials}   finished 2 laps {done}/{trials}   '
+              f'safe stops {safe}/{trials}   help clicks: lap1 {lap1}, lap2 {lap2}   '
+              f'avg distance from lane middle {err:.1f}px')
+
+
+# =====================================================================
+# 6. DRAWING
 # =====================================================================
 def text(img, s, y, color=(255, 255, 255), scale=0.5):
     cv2.putText(img, s, (10, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
@@ -316,9 +376,9 @@ def render(lighting, car):
 WINDOW = 'Vision-Guided Lane-Following Car'
 
 
-def main():
+def main(scenario='2'):
     brain, auto_help, paused = 'smart', False, False
-    car, lighting = Car(brain), Lighting()
+    car, lighting = Car(brain), SCENARIOS[scenario][1]()
 
     def on_mouse(event, mx, my, flags, param):
         """A click on the 'vision' picture (right panel) answers the car's help request."""
@@ -339,11 +399,13 @@ def main():
             break
         if key == ord(' '):
             paused = not paused
-        if key == ord('r'):
-            car, lighting = Car(brain), Lighting()
-        if key == ord('b'):                      # switch brain and restart
+        if chr(key) in SCENARIOS:                # 1/2/3: load a scenario
+            scenario = chr(key)
+        if key == ord('b'):                      # switch brain
             brain = 'basic' if brain == 'smart' else 'smart'
-            car, lighting = Car(brain), Lighting()
+        if key in (ord('r'), ord('b')) or chr(key) in SCENARIOS:
+            car, lighting = Car(brain), SCENARIOS[scenario][1]()
+            lighting.news = f'Scenario {scenario}: {SCENARIOS[scenario][0]}'
         if key == ord('h'):                      # let a simulated human answer help requests
             auto_help = not auto_help
             lighting.news = f'Auto-help (simulated human) {"ON" if auto_help else "OFF"}.'
@@ -355,4 +417,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    if '--compare' in sys.argv:
+        compare()
+    else:
+        main(sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in SCENARIOS else '2')
