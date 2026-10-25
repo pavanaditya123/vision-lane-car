@@ -12,6 +12,9 @@ is a small camera image of the road in front of it. Every step it:
 Run:   python lane_car.py
 Keys:  SPACE pause   R restart   Q quit
        T toggle dark tunnel   N toggle storm (world gets dark)
+       B switch Basic/Smart brain   H auto-help (simulated human clicks for you)
+Mouse: when the car asks for help, click a white lane line in the
+       "vision" picture on the right.
 """
 import math
 import numpy as np
@@ -108,11 +111,18 @@ def camera(scene, x, y, th):
 # =====================================================================
 # 3. COMPUTER VISION  (find the lane lines)
 # =====================================================================
-def line_mask(gray):
+FACTORY_THRESHOLD = 180                  # "paint is brighter than 180" - tuned for daylight
+
+
+def line_mask(band, thresholds):
     """Which pixels in the look-ahead band are lane paint?
-    Basic rule used by many beginner line followers: 'brighter than 180'."""
-    band = cv2.GaussianBlur(gray, (5, 5), 0)[BAND]
-    return band > 180
+    A pixel is paint if it is brighter than the threshold for its row."""
+    return band > thresholds[:, None]
+
+
+def row_light(band):
+    """How bright the road is in each row (the median pixel is almost always road)."""
+    return np.median(band, axis=1)
 
 
 def lane_centre(mask):
@@ -133,8 +143,19 @@ def lane_centre(mask):
 # =====================================================================
 # 4. THE AUTONOMOUS LOOP  (one step = observe -> decide -> act -> feedback)
 # =====================================================================
+ASK_BELOW = 0.25    # smart car stops and asks for help when confidence drops below 25%
+
+
 class Car:
-    def __init__(self):
+    """brain = 'basic': fixed threshold, keeps driving when blind (common approach).
+       brain = 'smart': stops when blind, asks a human to click ONE lane line,
+                        learns a new threshold from that click and remembers it
+                        for that light level (our novel feature)."""
+    def __init__(self, brain='smart'):
+        self.brain = brain
+        # Memory: road brightness -> paint threshold. Starts with the daylight setting only.
+        self.memory = {60.0: float(FACTORY_THRESHOLD)}
+        self.clicks = []                         # lap number of every help request answered
         self.x, self.y, self.th = CENTER[0], CENTER[1] - AXES[1], 0.0   # top of the oval, facing right
         self.steps, self.laps_angle, self.last_angle = 0, 0.0, self._angle()
         self.speed, self.status, self.why = SPEED, 'driving', 'Starting.'
@@ -150,7 +171,7 @@ class Car:
         return self.laps_angle / (2 * math.pi)
 
     def step(self, scene):
-        if self.status != 'driving':
+        if self.status != 'driving':             # finished, crashed, or waiting for a click
             return
         self.steps += 1
 
@@ -160,8 +181,15 @@ class Car:
         gray = np.clip(gray + self.rng.normal(0, NOISE, gray.shape), 0, 255).astype(np.uint8)
 
         # ---- DECIDE: where is the lane middle, how much should I turn? ----
-        self.mask = line_mask(gray)
+        self.band = cv2.GaussianBlur(gray, (5, 5), 0)[BAND].astype(np.float32)
+        self.mask = line_mask(self.band, self.thresholds(self.band))
         centre, self.confidence = lane_centre(self.mask)
+        if self.brain == 'smart' and self.confidence < ASK_BELOW:
+            # Novel feature, part 1: don't drive blind - stop and ask for help.
+            self.status = 'ASKING'
+            self.why = (f'I cannot see the lane (confidence {self.confidence:.0%}). Stopped safely. '
+                        'Please click a white lane line in my camera view.')
+            return
         if centre is None:
             error = 0.0
             self.why = 'No lane lines found -> drive straight and hope.'
@@ -189,6 +217,48 @@ class Car:
         elif self.steps >= MAX_STEPS:
             self.status = 'TIMEOUT'
 
+    def thresholds(self, band):
+        """Paint threshold for every row of the band.
+        Basic: always the factory value. Smart: for each row, use the remembered
+        threshold whose light level is closest to that row's road brightness."""
+        if self.brain == 'basic':
+            return np.full(band.shape[0], FACTORY_THRESHOLD, np.float32)
+        levels = np.array(list(self.memory))
+        values = np.array(list(self.memory.values()), np.float32)
+        nearest = np.abs(row_light(band)[:, None] - levels[None, :]).argmin(axis=1)
+        return values[nearest]
+
+    def teach(self, u, v):
+        """Novel feature, part 2: learn from ONE click at camera pixel (u, v)."""
+        if self.status != 'ASKING' or not (BAND.start <= v < BAND.stop):
+            self.why = 'Please click on a white line between the two yellow lines of the vision view.'
+            return False
+        row = self.band[v - BAND.start]
+        paint = float(row[max(0, u - 3):u + 4].max())     # brightest pixel near the click
+        road = float(np.median(row))                       # typical road brightness in that row
+        if paint - road < 8:
+            self.why = f"That spot ({paint:.0f}) is not brighter than the road ({road:.0f}). Please click a white line."
+            return False
+        threshold = (paint + road) / 2                     # halfway between road and paint
+        self.memory[round(road, 1)] = threshold            # part 3: remember it for this light level
+        self.clicks.append(int(self.laps))
+        self.status = 'driving'
+        self.why = (f'Thanks! In this light paint looks like {paint:.0f} and road like {road:.0f}, '
+                    f'so my new threshold is {threshold:.0f}. I will remember it.')
+        return True
+
+
+def simulated_human(car):
+    """Stands in for a person during automatic tests: clicks a real lane-line
+    pixel in the darkest analysed row (where the car is struggling)."""
+    truth = camera(WORLD, car.x, car.y, car.th)[BAND]       # same view, but in daylight
+    paint = cv2.cvtColor(truth, cv2.COLOR_BGR2GRAY) > 200
+    rows = [r for r in np.argsort(row_light(car.band)) if paint[r].any()]
+    if not rows:
+        return False
+    r = rows[0]
+    return car.teach(int(np.nonzero(paint[r])[0][0]) + 1, r + BAND.start)
+
 
 # =====================================================================
 # 5. DRAWING
@@ -215,42 +285,68 @@ def render(lighting, car):
     view = cv2.resize(view, (720, 560))
 
     # Right-hand panel: camera image, what the vision found, and the explanation
-    panel = np.zeros((560, 330, 3), np.uint8)
+    panel = np.zeros((560, 380, 3), np.uint8)
     if car.cam is not None:
         panel[25:205, 5:245] = cv2.resize(car.cam, (240, 180))
         seen = np.zeros((CAM_H, CAM_W, 3), np.uint8)
         seen[BAND][car.mask] = (255, 255, 255)
         seen[BAND.start, :] = seen[BAND.stop - 1, :] = (0, 220, 255)   # analysed band
         panel[230:410, 5:245] = cv2.resize(seen, (240, 180), interpolation=cv2.INTER_NEAREST)
+    if car.status == 'ASKING':                             # red frame: "click here!"
+        cv2.rectangle(panel, (3, 228), (247, 412), (0, 0, 255), 3)
+        text(panel, 'CLICK A WHITE LINE BELOW', 223, (80, 80, 255))
+    else:
+        text(panel, 'Vision: detected lane paint', 223)
     text(panel, 'Camera (what the car sees)', 18)
-    text(panel, 'Vision: detected lane paint', 223)
-    text(panel, lighting.news, 425, (0, 160, 255))
-    text(panel, f'Status: {car.status}   step {car.steps}', 445)
-    text(panel, f'Laps: {car.laps:.2f}   speed: {car.speed:.1f}', 465)
-    text(panel, f'Vision confidence: {getattr(car, "confidence", 0) * 100:.0f}%', 485)
-    words, line, y = car.why.split(), '', 508       # wrap the explanation
+    mem = '  '.join(f'{k:.0f}->{v:.0f}' for k, v in sorted(car.memory.items(), reverse=True))
+    text(panel, f'{car.brain.upper()} brain    help clicks: {len(car.clicks)}', 428, (255, 200, 120))
+    text(panel, f'Memory (road light -> threshold): {mem}', 446, (255, 200, 120), 0.4)
+    text(panel, lighting.news, 464, (0, 160, 255), 0.45)
+    text(panel, f'{car.status}  step {car.steps}  laps {car.laps:.2f}  '
+                f'confidence {getattr(car, "confidence", 0):.0%}', 482, scale=0.45)
+    words, line, y = car.why.split(), '', 504       # wrap the explanation
     for w in words:
-        if len(line + w) > 38:
-            text(panel, line, y, (120, 255, 255)); line, y = '', y + 20
+        if len(line + w) > 44:
+            text(panel, line, y, (120, 255, 255), 0.45); line, y = '', y + 18
         line += w + ' '
-    text(panel, line, y, (120, 255, 255))
+    text(panel, line, y, (120, 255, 255), 0.45)
     return np.hstack([view, panel])
 
 
+WINDOW = 'Vision-Guided Lane-Following Car'
+
+
 def main():
-    car, lighting, paused = Car(), Lighting(), False
+    brain, auto_help, paused = 'smart', False, False
+    car, lighting = Car(brain), Lighting()
+
+    def on_mouse(event, mx, my, flags, param):
+        """A click on the 'vision' picture (right panel) answers the car's help request."""
+        if event == cv2.EVENT_LBUTTONDOWN and 725 <= mx < 965 and 230 <= my < 410:
+            car.teach(int((mx - 725) * CAM_W / 240), int((my - 230) * CAM_H / 180))
+
+    cv2.namedWindow(WINDOW)
+    cv2.setMouseCallback(WINDOW, on_mouse)
     while True:
         if not paused:
+            if car.status == 'ASKING' and auto_help:
+                simulated_human(car)
             lighting.update(car.steps)
             car.step(lighting.scene())
-        cv2.imshow('Vision-Guided Lane-Following Car', render(lighting, car))
+        cv2.imshow(WINDOW, render(lighting, car))
         key = cv2.waitKey(30) & 0xFF
         if key == ord('q') or key == 27:
             break
         if key == ord(' '):
             paused = not paused
         if key == ord('r'):
-            car, lighting = Car(), Lighting()
+            car, lighting = Car(brain), Lighting()
+        if key == ord('b'):                      # switch brain and restart
+            brain = 'basic' if brain == 'smart' else 'smart'
+            car, lighting = Car(brain), Lighting()
+        if key == ord('h'):                      # let a simulated human answer help requests
+            auto_help = not auto_help
+            lighting.news = f'Auto-help (simulated human) {"ON" if auto_help else "OFF"}.'
         if key == ord('t'):                      # change the environment live
             lighting.toggle_tunnel()
         if key == ord('n'):
