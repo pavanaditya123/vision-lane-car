@@ -2,7 +2,7 @@
 
 **Topic:** Autonomous systems using computer vision. Fully simulated in Python + OpenCV, with no hardware.
 
-## 1. The problem in simple words
+## 1. The problem:-
 
 A self-driving car must stay in its lane. Our car has **only one sensor: a camera**.
 It looks at the white lane lines and steers to stay between them.
@@ -22,7 +22,7 @@ driving, and they crash.
 > never needs help again, even on a different part of the track or in a storm
 > with similar light.
 
-### Is it really new? (honest answer)
+### Is it really new?
 
 We searched for this exact feature. The single pieces exist, but **we did not
 find any project, paper or patent that combines them like this**. We cannot
@@ -113,7 +113,7 @@ Every step the car runs one loop:
 
 The lap-2 clicks happen only when a storm arrives during lap 2, which is new lighting the car has not seen. In the fixed tunnel scenario lap 2 needs **0** clicks.
 
-## 7. Limitations (be honest)
+## 7. Limitations
 
 - It is a simulation: a flat oval road, perfect white paint, a top-down camera, and simple noise.
 - Darkness is uniform per area. Real shadows, glare, rain and worn paint are harder.
