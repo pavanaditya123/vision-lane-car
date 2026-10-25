@@ -11,6 +11,7 @@ is a small camera image of the road in front of it. Every step it:
 
 Run:   python lane_car.py
 Keys:  SPACE pause   R restart   Q quit
+       T toggle dark tunnel   N toggle storm (world gets dark)
 """
 import math
 import numpy as np
@@ -28,6 +29,7 @@ BAND = slice(40, 100)                    # camera rows the car analyses (30-90 p
 SPEED = 4.0                              # pixels per step at full speed
 KP = 0.006                               # steering gain: radians of turn per pixel of error
 LAPS_GOAL, MAX_STEPS = 2, 1500
+NOISE = 3.0                              # camera sensor noise (std dev in gray levels)
 GRASS, ASPHALT, PAINT = (40, 90, 40), (60, 60, 60), (255, 255, 255)   # BGR colours
 
 
@@ -47,6 +49,45 @@ def build_world():
 
 
 WORLD, ROAD, DIST_MIDDLE = build_world()
+
+
+class Lighting:
+    """How bright the world is: 1.0 = daylight, 0.0 = pitch black.
+    The environment can change while the car drives."""
+    def __init__(self, tunnel=None, storm=None):
+        self.tunnel = tunnel        # (x_from, brightness): everything right of x_from is dark
+        self.storm = storm          # (step, brightness): at that step the whole world dims
+        self.storm_on = False
+        self.news = 'Daylight.'
+        self._scene = None
+
+    def update(self, step):
+        """Scheduled change: the storm rolls in at its step."""
+        if self.storm and step == self.storm[0] and not self.storm_on:
+            self.toggle_storm()
+
+    def toggle_tunnel(self):
+        self.tunnel = None if self.tunnel else (680, 0.2)
+        self.news = 'A dark tunnel now covers the right bend!' if self.tunnel else 'Tunnel removed.'
+        self._scene = None
+
+    def toggle_storm(self):
+        self.storm_on = not self.storm_on
+        if self.storm is None:
+            self.storm = (-1, 0.3)
+        self.news = f'WORLD CHANGED: storm! Light dropped to {self.storm[1]:.0%}.' if self.storm_on else 'Storm passed.'
+        self._scene = None
+
+    def scene(self):
+        """The world as it looks right now (recomputed only when the light changes)."""
+        if self._scene is None:
+            light = np.ones((H, W), np.float32)
+            if self.tunnel:
+                light[:, self.tunnel[0]:] = self.tunnel[1]
+            if self.storm_on:
+                light *= self.storm[1]
+            self._scene = (WORLD * light[..., None]).astype(np.uint8)
+        return self._scene
 
 
 # =====================================================================
@@ -99,6 +140,7 @@ class Car:
         self.speed, self.status, self.why = SPEED, 'driving', 'Starting.'
         self.errors = []                         # distance from lane middle each step (for scoring)
         self.cam = self.mask = None
+        self.rng = np.random.default_rng(0)      # camera noise (same every run)
 
     def _angle(self):
         return math.atan2((self.y - CENTER[1]) / AXES[1], (self.x - CENTER[0]) / AXES[0])
@@ -114,7 +156,8 @@ class Car:
 
         # ---- OBSERVE: take a camera picture, convert to grayscale ----
         self.cam = camera(scene, self.x, self.y, self.th)
-        gray = cv2.cvtColor(self.cam, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(self.cam, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        gray = np.clip(gray + self.rng.normal(0, NOISE, gray.shape), 0, 255).astype(np.uint8)
 
         # ---- DECIDE: where is the lane middle, how much should I turn? ----
         self.mask = line_mask(gray)
@@ -154,8 +197,11 @@ def text(img, s, y, color=(255, 255, 255), scale=0.5):
     cv2.putText(img, s, (10, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
 
 
-def render(scene, car):
-    view = scene.copy()
+def render(lighting, car):
+    view = lighting.scene().copy()
+    if lighting.tunnel:                                    # outline the tunnel so the class can see it
+        cv2.rectangle(view, (lighting.tunnel[0], 0), (W - 1, H - 1), (0, 140, 255), 2)
+        cv2.putText(view, 'TUNNEL', (lighting.tunnel[0] + 10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 140, 255), 2)
     c, s = math.cos(car.th), math.sin(car.th)
     # Camera footprint: the area the car can see (yellow box)
     corners = []
@@ -178,10 +224,11 @@ def render(scene, car):
         panel[230:410, 5:245] = cv2.resize(seen, (240, 180), interpolation=cv2.INTER_NEAREST)
     text(panel, 'Camera (what the car sees)', 18)
     text(panel, 'Vision: detected lane paint', 223)
-    text(panel, f'Status: {car.status}   step {car.steps}', 430)
-    text(panel, f'Laps: {car.laps:.2f}   speed: {car.speed:.1f}', 452)
-    text(panel, f'Vision confidence: {getattr(car, "confidence", 0) * 100:.0f}%', 474)
-    words, line, y = car.why.split(), '', 500       # wrap the explanation
+    text(panel, lighting.news, 425, (0, 160, 255))
+    text(panel, f'Status: {car.status}   step {car.steps}', 445)
+    text(panel, f'Laps: {car.laps:.2f}   speed: {car.speed:.1f}', 465)
+    text(panel, f'Vision confidence: {getattr(car, "confidence", 0) * 100:.0f}%', 485)
+    words, line, y = car.why.split(), '', 508       # wrap the explanation
     for w in words:
         if len(line + w) > 38:
             text(panel, line, y, (120, 255, 255)); line, y = '', y + 20
@@ -191,18 +238,23 @@ def render(scene, car):
 
 
 def main():
-    car, paused = Car(), False
+    car, lighting, paused = Car(), Lighting(), False
     while True:
         if not paused:
-            car.step(WORLD)
-        cv2.imshow('Vision-Guided Lane-Following Car', render(WORLD, car))
+            lighting.update(car.steps)
+            car.step(lighting.scene())
+        cv2.imshow('Vision-Guided Lane-Following Car', render(lighting, car))
         key = cv2.waitKey(30) & 0xFF
         if key == ord('q') or key == 27:
             break
         if key == ord(' '):
             paused = not paused
         if key == ord('r'):
-            car = Car()
+            car, lighting = Car(), Lighting()
+        if key == ord('t'):                      # change the environment live
+            lighting.toggle_tunnel()
+        if key == ord('n'):
+            lighting.toggle_storm()
     cv2.destroyAllWindows()
 
 
