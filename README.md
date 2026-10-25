@@ -39,16 +39,29 @@ doing it.
 
 ## 3. How to run
 
+You need Python 3.9 or newer. Nothing else.
+
+**Easiest (Windows):** double-click **`run.bat`**.
+The first time, it creates a virtual environment (`.venv`) and installs
+`requirements.txt` (about 1 minute). After that it starts straight away.
+
+**Manual (any OS):**
+
 ```bash
-pip install opencv-python numpy
+python -m venv .venv
+.venv\Scripts\activate            # Windows
+# source .venv/bin/activate       # macOS / Linux
+pip install -r requirements.txt
 python lane_car.py
 ```
 
 | Command | What it does |
 |---|---|
-| `python lane_car.py` | Live demo window, starting in scenario 2 (tunnel) |
-| `python lane_car.py 3` | Start in scenario 3 (storm) |
-| `python lane_car.py --compare` | Measure Basic vs Smart (no window, about 40 seconds) |
+| `python lane_car.py` (or `run.bat`) | Live demo window, starting in scenario 2 (tunnel) |
+| `python lane_car.py 3` (or `run.bat 3`) | Start in scenario 3 (storm) |
+| `python lane_car.py --compare` (or `run.bat --compare`) | Measure Basic vs Smart (no window, about 40 seconds) |
+
+Tested with OpenCV 4.13 and 5.0; both give identical results.
 
 | Key | Action |
 |---|---|
