@@ -2,6 +2,9 @@
 
 **Topic:** Autonomous systems using computer vision. Fully simulated in Python + OpenCV, with no hardware.
 
+📖 **New here? Read [EXPLANATION.md](EXPLANATION.md) first**: the whole project step by step, in simple English, with diagrams.
+🎤 Presenting as a team? See [TEAM_PRESENTATION.md](TEAM_PRESENTATION.md).
+
 ## 1. The problem:-
 
 A self-driving car must stay in its lane. Our car has **only one sensor: a camera**.
