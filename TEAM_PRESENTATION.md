@@ -15,20 +15,22 @@
 
 | Person | Part | Slides | Time |
 |---|---|---|---|
-| **Person A** | The problem, existing work, our novelty | 1 to 3 | ~3.5 min |
-| **Person B** | How the system works (camera → vision → decision → action → learning) | 4 to 6 | ~4 min |
-| **Person C** | Live demo, results, limitations, conclusion | 7 to 9 | ~4 min |
+| **M. Pavan Aditya** | Title, the problem, existing work, our novelty | 1 to 5 | ~3.5 min |
+| **Hartik** | How the system works (camera → vision → decision → action → learning) | 6 to 9 | ~4 min |
+| **Zafar Mohammad** | Live demo, results, limitations, conclusion | 10 to 13 | ~4 min |
 
-**Laptop setup before you start (Person C does this):**
+**Slide deck:** the 13-slide deck has every line of this script in its speaker notes. The "Slide 1–9" headings below are the shorter outline; in the deck, M. Pavan Aditya presents slides 1–5, Hartik 6–9, and Zafar Mohammad 10–13.
+
+**Laptop setup before you start (Zafar Mohammad does this):**
 open a terminal in the project folder, run `python lane_car.py`, then press **SPACE** to pause on the first frame. Keep the README open in a second window in case the demo fails.
 
-## PERSON A: The problem and our novelty
+## M. PAVAN ADITYA (Person A): The problem and our novelty
 
 ### Slide 1: Title
 **Show:** project title, the three names, one screenshot of the window.
 
 **Say:**
-> "Good morning. Our project is a self-driving car that uses computer vision. The car has only one sensor, a camera, just like a person driving with only their eyes. Our car has one special skill: when it can't see, it stops, asks for help, learns from one click, and remembers what it learned. I'll explain the problem, [B] will explain how it works, and [C] will show you a live demo and the results."
+> "Good morning. Our project is a self-driving car that uses computer vision. The car has only one sensor, a camera, just like a person driving with only their eyes. Our car has one special skill: when it can't see, it stops, asks for help, learns from one click, and remembers what it learned. I'll explain the problem, Hartik will explain how it works, and Zafar will show you a live demo and the results."
 
 **Notes for A:**
 - Speak slowly. This slide sets up the whole talk.
@@ -51,12 +53,12 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 > "We searched for existing work. Some robots ask for help when they are unsure, but a human then takes control; the robot doesn't learn anything. Some research remembers *places* where the camera failed. Some cars slow down when unsure. Our idea combines these in a new way. Our car asks for help, but it **learns a vision setting from a single click**, and it remembers that setting by **light level**, not by place. That means what it learns in the tunnel also helps later in a storm with similar light. We did not find any project, paper or patent that does this exact combination. We are careful here: we say 'not found in our search', not 'first in the world'."
 
 **Handover line (A → B):**
-> "So how does a camera picture become a steering decision, and how does one click teach the car? [B] will explain."
+> "So how does a camera picture become a steering decision, and how does one click teach the car? Hartik will explain."
 
 **Notes for A:**
 - If someone asks "Is it really new?": "The single parts exist; the combination of one-click learning and memory by light level was not in anything we found. We list the closest works in our README."
 
-## PERSON B: How the system works
+## HARTIK (Person B): How the system works
 
 ### Slide 4: The autonomous loop
 **Show:** a simple loop diagram: **Camera → Vision → Decision → Steering → (car moves) → Camera …**
@@ -86,7 +88,7 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 > "When the human clicks on a line, the car looks at that spot. The brightest pixel near the click is the paint, about 51 in the tunnel. The typical pixel in that row is the road, about 12. The car picks a new threshold halfway between them: 32. Now it can see the lines again. Then the important part: it **saves this in memory as 'road brightness 12 → threshold 32'**. From then on, for every row of every picture, it checks how bright the road is and uses the remembered threshold for the closest light level. So on lap 2, when it reaches the tunnel again, it doesn't ask; it already knows. We also added a safety check: it never uses a remembered threshold that is darker than the road, because then the whole road would look like paint."
 
 **Handover line (B → C):**
-> "That's the theory. Now [C] will show you the car doing it live, and the numbers that prove it works."
+> "That's the theory. Now Zafar will show you the car doing it live, and the numbers that prove it works."
 
 **Notes for B:**
 - Formula: **threshold = (paint + road) / 2**.
@@ -94,7 +96,7 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 - If the human clicks the wrong place (not brighter than the road), the car says so and asks again.
 - Code functions to point at if asked: `Car.step()`, `Car.teach()`, `Car.thresholds()`.
 
-## PERSON C: Demo, results, limits, conclusion
+## ZAFAR MOHAMMAD (Person C): Demo, results, limits, conclusion
 
 ### Slide 7: Live demo
 **Do the demo in this order:**
@@ -137,14 +139,14 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 
 | Question | Who | Simple answer |
 |---|---|---|
-| Why is this "autonomous" if a human helps? | **A** | It drives by itself all the time. It asks only when it is blind, rarely, and learns so it asks less later. Real self-driving cars also use remote human help. |
-| Why not just use adaptive thresholding (OpenCV)? | **B** | That's a good alternative for normal light. But when it's very dark, adaptive methods also guess, and noise can look like lines. Our car stops and gets one reliable answer, and it knows it is unsure instead of guessing. |
-| What if the human clicks the wrong place? | **B** | The car checks that the click is brighter than the road. If not, it says "please click a white line" and waits. |
-| Why remember by light level instead of by place? | **B** | Light level transfers: what it learned in the tunnel also works in a storm with similar light, even in a new place. |
-| Why 25% confidence? | **B** | Below 25% it sees lines in fewer than 1 in 4 rows, which is too little to steer safely. It's a design choice; we could tune it. |
-| Is it really novel? | **A** | The pieces exist (asking for help, remembering failures, slowing down when unsure). We found no work combining one-click learning with memory by light level. We show the closest works in our README. |
-| Why 3 safe stops? | **C** | The tunnel plus storm made the paint almost as dark as the road (brightness 6 vs 2). Nobody could see it, so stopping is correct. |
-| Does it work on a real car? | **C** | Not tested. It's a simulation. Next steps: real camera images, curved and faded lines, a remote operator instead of a mouse click. |
+| Why is this "autonomous" if a human helps? | **M. Pavan Aditya** | It drives by itself all the time. It asks only when it is blind, rarely, and learns so it asks less later. Real self-driving cars also use remote human help. |
+| Why not just use adaptive thresholding (OpenCV)? | **Hartik** | That's a good alternative for normal light. But when it's very dark, adaptive methods also guess, and noise can look like lines. Our car stops and gets one reliable answer, and it knows it is unsure instead of guessing. |
+| What if the human clicks the wrong place? | **Hartik** | The car checks that the click is brighter than the road. If not, it says "please click a white line" and waits. |
+| Why remember by light level instead of by place? | **Hartik** | Light level transfers: what it learned in the tunnel also works in a storm with similar light, even in a new place. |
+| Why 25% confidence? | **Hartik** | Below 25% it sees lines in fewer than 1 in 4 rows, which is too little to steer safely. It's a design choice; we could tune it. |
+| Is it really novel? | **M. Pavan Aditya** | The pieces exist (asking for help, remembering failures, slowing down when unsure). We found no work combining one-click learning with memory by light level. We show the closest works in our README. |
+| Why 3 safe stops? | **Zafar Mohammad** | The tunnel plus storm made the paint almost as dark as the road (brightness 6 vs 2). Nobody could see it, so stopping is correct. |
+| Does it work on a real car? | **Zafar Mohammad** | Not tested. It's a simulation. Next steps: real camera images, curved and faded lines, a remote operator instead of a mouse click. |
 
 ## How to prepare tonight (about 30 minutes each)
 
@@ -155,5 +157,5 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 | 10 to 25 min | Practise **your own part** out loud twice, including your handover line. |
 | 25 to 30 min | Read the Questions table; each person learns their own answers. |
 
-**Person C, extra:** practise the demo steps twice and run `--compare` once to see the table.
-**Person B, extra:** open `lane_car.py` and find `Car.step()`, `Car.teach()` and `Car.thresholds()`, so you can show them if asked.
+**Zafar Mohammad, extra:** practise the demo steps twice and run `--compare` once to see the table.
+**Hartik, extra:** open `lane_car.py` and find `Car.step()`, `Car.teach()` and `Car.thresholds()`, so you can show them if asked.
