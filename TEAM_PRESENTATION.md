@@ -16,10 +16,10 @@
 | Person | Part | Slides | Time |
 |---|---|---|---|
 | **M. Pavan Aditya** | Title, the problem, existing work, our novelty | 1 to 5 | ~3.5 min |
-| **Hartik** | How the system works (camera → vision → decision → action → learning) | 6 to 9 | ~4 min |
-| **Zafar Mohammad** | Live demo, results, limitations, conclusion | 10 to 13 | ~4 min |
+| **Hartik** | How the system works (camera → vision → decision → action → learning) and the harder tests | 6 to 10 | ~4 min |
+| **Zafar Mohammad** | Live demo, results, limitations, conclusion | 11 to 14 | ~4 min |
 
-**Slide deck:** the 13-slide deck has every line of this script in its speaker notes. The "Slide 1–9" headings below are the shorter outline; in the deck, M. Pavan Aditya presents slides 1–5, Hartik 6–9, and Zafar Mohammad 10–13.
+**Slide deck:** the 14-slide deck has every line of this script in its speaker notes. The "Slide 1–9" headings below are the shorter outline; in the deck, M. Pavan Aditya presents slides 1–5, Hartik 6–10 (slide 10: random roads and harder tests), and Zafar Mohammad 11–14.
 
 **Laptop setup before you start (Zafar Mohammad does this):**
 open a terminal in the project folder, run `python lane_car.py`, then press **SPACE** to pause on the first frame. Keep the README open in a second window in case the demo fails.
