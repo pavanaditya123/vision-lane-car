@@ -80,7 +80,7 @@ Tested with OpenCV 4.13 and 5.0; both give identical results.
 | `SPACE` | Pause |
 | `R` | Restart |
 | `Q` | Quit |
-| **Mouse** | When the car asks, click a white line in the **vision** picture (red frame) |
+| **Mouse** | When the car asks (red frames, brightened **night view**), click **near** a grey lane line in **either** picture. It snaps to the line within 20 px, and a green circle shows where. Also works to rescue the car from a SAFE STOP. |
 
 ## 4. How it works
 
@@ -117,9 +117,9 @@ Both brains drive exactly the same worlds (fixed random seeds), so the compariso
 | Metric | Basic | Smart (ours) |
 |---|---|---|
 | Crashed (left the road) | **30 / 30** | **0 / 30** |
-| Finished 2 laps | 0 / 30 | **28 / 30** |
-| Safe stop (too dark even with help) | 0 | 2 / 30 |
-| Help clicks on lap 1 / lap 2 | – | 32 / 13 |
+| Finished 2 laps | 0 / 30 | **29 / 30** |
+| Safe stop (too dark even with help) | 0 | 1 / 30 |
+| Help clicks on lap 1 / lap 2 | – | 32 / 14 |
 | Avg distance from lane middle | 8.6 px | 5.2 px |
 
 **Test B: 30 random roads.** Each is a different curvy road with 3 to 5 tunnels (12% to 70% light, fading entrances), patchy ±15% light everywhere, and 3 surprise dark patches (8% to 50% light) that appear and disappear **while the car drives**.
@@ -128,10 +128,10 @@ Both brains drive exactly the same worlds (fixed random seeds), so the compariso
 |---|---|---|
 | Crashed (left the road) | **30 / 30** | **0 / 30** |
 | Finished 2 laps | 0 / 30 | **30 / 30** |
-| Help clicks on lap 1 / lap 2 | – | 51 / 3 |
+| Help clicks on lap 1 / lap 2 | – | 52 / 3 |
 | Avg distance from lane middle | 9.8 px | 5.2 px |
 
-- In Test B, **124 tunnels needed only 51 clicks**: similar tunnels share one memory.
+- In Test B, **124 tunnels needed only 52 clicks**: similar tunnels share one memory.
 - Lap-2 clicks happen only when something new appears in lap 2 (a storm, or a surprise patch with unseen light). In the fixed tunnel scenario lap 2 needs **0** clicks.
 
 ## 7. Limitations
@@ -141,5 +141,5 @@ Both brains drive exactly the same worlds (fixed random seeds), so the compariso
 - Random roads are smooth closed loops with no junctions, and bends no sharper than a 130 px radius.
 - In automatic tests a **simulated human** clicks a correct line. Real people may click wrongly. The car rejects clicks that are not brighter than the road, but nothing more.
 - The car needs a human nearby. A real car could ask a remote operator instead.
-- 2 of 30 random oval worlds were so dark (tunnel plus storm) that the paint was nearly invisible. The car stops safely, but it cannot finish.
+- 1 of 30 random oval worlds was so dark (tunnel plus storm) that the paint was nearly invisible. The car stops safely, but it cannot finish.
 - Our novelty claim is "not found in our search", not "proven new".

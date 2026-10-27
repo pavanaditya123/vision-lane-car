@@ -93,7 +93,8 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 **Notes for B:**
 - Formula: **threshold = (paint + road) / 2**.
 - Memory starts with one entry, the factory daylight setting: **60 → 180**.
-- If the human clicks the wrong place (not brighter than the road), the car says so and asks again.
+- The click doesn't need to be exact: the car snaps to the nearest line within 20 px, and a green circle shows where. While it waits, both pictures turn into a brightened "night view" so the lines are easy to see.
+- If the human clicks far from any line, the car says "No lane line near your click" and keeps waiting.
 - Code functions to point at if asked: `Car.step()`, `Car.teach()`, `Car.thresholds()`.
 
 ## ZAFAR MOHAMMAD (Person C): Demo, results, limits, conclusion
@@ -105,14 +106,14 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 |---|---|---|---|
 | 1 | `B` (switch to BASIC), then SPACE | Car drives into the tunnel, confidence drops to 0%, car crashes | "This is the basic car with the fixed rule. In the tunnel it goes blind… and crashes." |
 | 2 | `B` (back to SMART) | Car drives to the tunnel and **stops**, red box appears | "Same tunnel, our car. It sees the confidence drop and stops safely. It's asking me for help." |
-| 3 | **Click** a grey line inside the red box | Message: "paint 51, road 12, new threshold 32" | "One click. It learned the new threshold and continues through the tunnel." |
+| 3 | **Click near** a grey line in either red-framed picture (the night view) | Message: "paint 51, road 12, new threshold 32" | "One click. It learned the new threshold and continues through the tunnel." |
 | 4 | Let it drive to lap 2 | Passes the tunnel **without stopping**; help clicks stay at 1 | "Lap 2: no question this time. It remembered." |
 | 5 | Press `N` (storm) | The whole world gets darker | "Now the environment changes: a storm. Watch: it adapts, or asks once for this new light, then continues." |
 | 6 | Press `4`, then `H` (auto-help) | A **random curvy road** with 3 to 5 labelled tunnels (T1 25%, T2 60% …) | "It's not memorising one oval. Every road is new, with tunnels of different darkness. Similar tunnels share one memory, so it needs fewer clicks than tunnels." |
 | 7 | Press `P` | A pink circle: a **dark patch drops right in front of the car** | "A surprise while driving. It handles it, or asks once, and never drives blind." Press `G` for another new road if time allows. |
 
 **Notes for C:**
-- If the click misses, the car says "Please click a white line"; just click again on the grey line.
+- If the click is too far from a line, the car says "No lane line near your click"; click closer to a grey line. If the car shows SAFE STOP, you can still click near a line to rescue it, or press `R`.
 - If the demo breaks: press `R` to restart, or `H` so a simulated human answers automatically.
 - Backup: show the screenshots/numbers from the README.
 
@@ -122,12 +123,12 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 | Metric (30 random dark worlds) | Basic | Ours |
 |---|---|---|
 | Crashed | **30 / 30** | **0 / 30** |
-| Finished 2 laps | 0 / 30 | **28 / 30** |
-| Safe stop (too dark even with help) | 0 | 2 / 30 |
-| Help clicks lap 1 / lap 2 | – | 32 / 13 |
+| Finished 2 laps | 0 / 30 | **29 / 30** |
+| Safe stop (too dark even with help) | 0 | 1 / 30 |
+| Help clicks lap 1 / lap 2 | – | 32 / 14 |
 
 **Say:**
-> "To be fair we tested both cars on the same 30 random worlds, each with a random tunnel and often a storm at a random time. The basic car crashed every time. Our car never crashed. It finished 28 worlds. In 2 worlds it was so dark that even a human couldn't see the paint, so it stayed stopped, which is the safe choice. We also tested 30 random curvy roads, each with 3 to 5 tunnels of different darkness and surprise dark patches: the basic car crashed on all 30, ours finished all 30. Those roads had 124 tunnels but needed only 51 clicks, because similar tunnels share one memory. And it needed fewer clicks on lap 2 than on lap 1, because it remembered. The clicks on lap 2 happen only when a storm came during lap 2, bringing new lighting."
+> "To be fair we tested both cars on the same 30 random worlds, each with a random tunnel and often a storm at a random time. The basic car crashed every time. Our car never crashed. It finished 29 worlds. In 1 world it was so dark that even a human couldn't see the paint, so it stayed stopped, which is the safe choice. We also tested 30 random curvy roads, each with 3 to 5 tunnels of different darkness and surprise dark patches: the basic car crashed on all 30, ours finished all 30. Those roads had 124 tunnels but needed only 52 clicks, because similar tunnels share one memory. And it needed fewer clicks on lap 2 than on lap 1, because it remembered. The clicks on lap 2 happen only when a storm came during lap 2, bringing new lighting."
 
 **Notes for C:**
 - The whole test takes about 40 seconds. Run it before class, not live.
@@ -143,11 +144,11 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 |---|---|---|
 | Why is this "autonomous" if a human helps? | **M. Pavan Aditya** | It drives by itself all the time. It asks only when it is blind, rarely, and learns so it asks less later. Real self-driving cars also use remote human help. |
 | Why not just use adaptive thresholding (OpenCV)? | **Hartik** | That's a good alternative for normal light. But when it's very dark, adaptive methods also guess, and noise can look like lines. Our car stops and gets one reliable answer, and it knows it is unsure instead of guessing. |
-| What if the human clicks the wrong place? | **Hartik** | The car checks that the click is brighter than the road. If not, it says "please click a white line" and waits. |
+| What if the human clicks the wrong place? | **Hartik** | It snaps to the clearest line within 20 px of the click. If there's no line nearby, it says "No lane line near your click" and waits. |
 | Why remember by light level instead of by place? | **Hartik** | Light level transfers: what it learned in the tunnel also works in a storm with similar light, even in a new place. |
 | Why 25% confidence? | **Hartik** | Below 25% it sees lines in fewer than 1 in 4 rows, which is too little to steer safely. It's a design choice; we could tune it. |
 | Is it really novel? | **M. Pavan Aditya** | The pieces exist (asking for help, remembering failures, slowing down when unsure). We found no work combining one-click learning with memory by light level. We show the closest works in our README. |
-| Why 2 safe stops? | **Zafar Mohammad** | The tunnel plus storm made the paint almost as dark as the road (brightness 6 vs 2). Nobody could see it, so stopping is correct. |
+| Why 1 safe stop? | **Zafar Mohammad** | The tunnel plus storm made the paint almost as dark as the road (brightness 6 vs 2). Nobody could see it, so stopping is correct. |
 | Does it work on a real car? | **Zafar Mohammad** | Not tested. It's a simulation. Next steps: real camera images, curved and faded lines, a remote operator instead of a mouse click. |
 
 ## How to prepare tonight (about 30 minutes each)

@@ -271,9 +271,9 @@ instead of asking again and again forever.
 
 ```python
 def teach(self, u, v):                                # (u, v) = clicked camera pixel
-    row = self.band[v - BAND.start]                   # that row of the picture
-    paint = float(row[max(0, u - 3):u + 4].max())     # brightest pixel near the click (≈ 51)
-    road = float(self.light[v - BAND.start, u])       # road brightness around the click (≈ 12)
+    # (snap: find the clearest line pixel (r, c) within 20 px of the click; see step 8)
+    paint = float(self.band[r, c])                    # paint brightness there (≈ 51)
+    road = float(self.light[r, c])                    # road brightness around it (≈ 12)
     if paint - road < 8:
         return False                                  # not brighter than the road: reject click
     threshold = (paint + road) / 2                    # halfway: (51 + 12) / 2 ≈ 32
@@ -367,11 +367,36 @@ python lane_car.py --compare      # about 40 seconds
   to camera pixels and call `car.teach(u, v)`:
 
 ```python
-if 725 <= mx < 965 and 230 <= my < 410:                    # click inside the "vision" picture
-    car.teach(int((mx - 725) * CAM_W / 240), int((my - 230) * CAM_H / 180))
+def panel_to_camera(mx, my):
+    if not 725 <= mx < 965:
+        return None
+    for top in (25, 230):                                   # camera picture or vision picture
+        if top <= my < top + 180:
+            return int((mx - 725) * CAM_W / 240), int((my - top) * CAM_H / 180)
+    return None
 ```
 
-(The vision picture is shown 1.5× bigger, 240 × 180, so we scale back to 160 × 120.)
+(Both pictures are shown 1.5× bigger, 240 × 180, so we scale back to 160 × 120.)
+
+### Making the click easy (added after classroom testing)
+
+Clicking exactly on a 5 px grey line in a dark picture was too hard, so:
+
+```python
+SNAP = 20
+stand_out = (self.band - self.light)[rows, cols]     # within 20 px of the click: how much brighter
+r, c = np.unravel_index(int(np.argmax(stand_out)), stand_out.shape)   # than the road? take the best
+```
+
+- **Snap:** the car looks within **20 px** of the click and learns from the pixel that stands
+  out most from the road around it. You only need to click **near** a line.
+- **Either picture:** clicks on the top camera picture or the bottom vision picture both work.
+- **Night view:** while the car waits, both pictures are brightened with **CLAHE**
+  (`cv2.createCLAHE`, local contrast boosting), so the human can see the lines. This is
+  only for the human; the car's own vision is unchanged.
+- **Green circle:** shows where the click snapped to, for about 25 steps.
+- **Rescue:** a click also works in **SAFE STOP**, so you don't have to restart.
+- **Key P:** only one P-patch at a time (pressing again moves it), at 30% light.
 
 ---
 

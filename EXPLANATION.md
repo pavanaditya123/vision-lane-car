@@ -166,7 +166,9 @@ is still below 25%, it asks again. It only drives on when detection has recovere
 
 **Limits of one click:**
 - It only calibrates **brightness**. It teaches nothing about lane shapes, obstacles or traffic rules.
-- The car rejects a click that is **not brighter than the road** ("please click a white line").
+- The click doesn't need to be exact: the car **snaps to the clearest line pixel within 20 px** of the click, and a green circle shows where.
+  While it waits, both pictures switch to a brightened **night view** so the human can see the lines.
+- The car rejects a click with **no line nearby** ("No lane line near your click").
   But a bright spot is **not automatically** a lane line, so a wrong click on something bright would still be accepted.
 
 ---
@@ -304,17 +306,17 @@ There are two meanings of "novelty":
 | 30 random dark worlds (oval, tunnel + storm) | Basic car | Our car |
 |---|---|---|
 | Crashed | 30 / 30 | **0 / 30** |
-| Finished 2 laps | 0 / 30 | **28 / 30** |
-| Safe stop (too dark even with help) | 0 | 2 / 30 |
-| Help clicks lap 1 / lap 2 | – | 32 / 13 |
+| Finished 2 laps | 0 / 30 | **29 / 30** |
+| Safe stop (too dark even with help) | 0 | 1 / 30 |
+| Help clicks lap 1 / lap 2 | – | 32 / 14 |
 
 | 30 random roads (3–5 tunnels each, patchy light, surprise dark patches) | Basic car | Our car |
 |---|---|---|
 | Crashed | 30 / 30 | **0 / 30** |
 | Finished 2 laps | 0 / 30 | **30 / 30** |
-| Help clicks lap 1 / lap 2 | – | 51 / 3 |
+| Help clicks lap 1 / lap 2 | – | 52 / 3 |
 
-The second test has **124 tunnels in total, but needed only 51 clicks**, because
+The second test has **124 tunnels in total, but needed only 52 clicks**, because
 tunnels with similar light share one memory. This is the memory transferring to new
 places, measured.
 
@@ -351,7 +353,7 @@ report finished laps too, not only crashes.
 - It needs a **human nearby** to click (a real car could ask a remote operator).
 - Memory is **lost when the program closes**.
 - The 25% confidence rule and the "halfway" threshold are **simple design choices**, not proven optimal.
-- In 2 of 30 random oval worlds (tunnel plus storm) it was too dark even with help, so the car **stopped safely** but could not finish.
+- In 1 of 30 random oval worlds (tunnel plus storm) it was too dark even with help, so the car **stopped safely** but could not finish.
 
 ---
 
