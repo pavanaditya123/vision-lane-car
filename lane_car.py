@@ -17,8 +17,8 @@ Run:   python lane_car.py             (live demo, starts in scenario 2)
 Keys:  1 / 2 / 3 / 4 load scenario   G new random road   SPACE pause   R restart   Q quit
        T toggle dark tunnel   N toggle storm (world gets dark)   P drop a dark patch ahead
        B switch Basic/Smart brain   H auto-help (simulated human clicks for you)
-Mouse: when the car asks for help, click a white lane line in the
-       "vision" picture on the right.
+Mouse: when the car asks for help, click NEAR a grey lane line in either
+       picture on the right (it snaps to the line within 20 px).
 """
 import math
 import numpy as np
@@ -111,6 +111,7 @@ class Lighting:
         self.dapple = dapple        # (seed, strength): smooth random light pattern, like light through trees
         self.surprises = list(surprises)   # [(from_step, to_step, x, y, radius, brightness)]: dark patches
         self.patches = []                  # the surprise patches showing right now
+        self.manual = None                 # the patch dropped with the P key (only one at a time)
         self.storm_on = False
         self.news = ('A dark tunnel covers the right bend.' if tunnel else
                      f'{len(self.zones)} tunnels: ' + ', '.join(f'{b:.0%}' for _, _, b in self.zones) + ' light'
@@ -129,9 +130,12 @@ class Lighting:
                          else 'A dark patch went away.')
             self.patches, self._scene = showing, None
 
-    def drop_patch(self, x, y, step, brightness=0.15):
-        """Live demo (key P): a dark patch appears right now, 140 px in front of the car."""
-        self.surprises.append((step, step + 300, x, y, 70.0, brightness))
+    def drop_patch(self, x, y, step, brightness=0.3):
+        """Live demo (key P): a dark patch appears right now, 140 px in front of the car.
+        Only one P-patch at a time: pressing P again moves it, instead of stacking."""
+        self.surprises = [s for s in self.surprises if s is not self.manual]
+        self.manual = (step, step + 300, x, y, 70.0, brightness)
+        self.surprises.append(self.manual)
         self.update(step)
 
     def toggle_tunnel(self):
@@ -229,6 +233,7 @@ def lane_centre(mask):
 # 4. THE AUTONOMOUS LOOP  (one step = observe -> decide -> act -> feedback)
 # =====================================================================
 ASK_BELOW = 0.25    # smart car stops and asks for help when confidence drops below 25%
+SNAP = 20           # a help click within 20 px of a lane line is good enough
 
 
 class Car:
@@ -242,6 +247,7 @@ class Car:
         self.memory = {60.0: float(FACTORY_THRESHOLD)}
         self.clicks = []                         # lap number of every help request answered
         self.just_taught = False                 # True right after a click, until vision is checked
+        self.snapped = None                      # (u, v, step) of the last line pixel learned from
         self.x, self.y, self.th = track.start    # start of the road, facing along it
         self.steps, self.laps_angle, self.last_angle = 0, 0.0, self._angle()
         self.speed, self.status, self.why = SPEED, 'driving', 'Starting.'
@@ -277,11 +283,11 @@ class Car:
             if self.just_taught:                 # a click did not bring the lines back:
                 self.status = 'SAFE STOP'        # don't ask forever, stay stopped (fault tolerance)
                 self.why = (f'Even after learning I see too little (confidence {self.confidence:.0%}). '
-                            'Staying stopped (safe).')
+                            'Staying stopped (safe). Click near another lane line to try again, or press R.')
                 return
             self.status = 'ASKING'
             self.why = (f'I cannot see the lane (confidence {self.confidence:.0%}). Stopped safely. '
-                        'Please click a white lane line in my camera view.')
+                        'Click near a grey lane line in either picture (or press H).')
             return
         self.just_taught = False
         if centre is None:
@@ -326,16 +332,24 @@ class Car:
         return values[distance.argmin(axis=2)]
 
     def teach(self, u, v):
-        """Novel feature, part 2: learn from ONE click at camera pixel (u, v)."""
-        if self.status != 'ASKING' or not (BAND.start <= v < BAND.stop):
-            self.why = 'Please click on a white line between the two yellow lines of the vision view.'
-            return False
-        row = self.band[v - BAND.start]
-        paint = float(row[max(0, u - 3):u + 4].max())     # brightest pixel near the click
-        road = float(self.light[v - BAND.start, u])        # road brightness around the click
+        """Novel feature, part 2: learn from ONE click near a lane line at camera
+        pixel (u, v). The click does not have to be exact: the car snaps to the
+        clearest line pixel within SNAP px of it. Works while asking for help,
+        and also to rescue the car from a safe stop."""
+        if self.status not in ('ASKING', 'SAFE STOP'):
+            return False                                   # driving fine: ignore clicks
+        r0 = min(max(v - BAND.start, 0), self.band.shape[0] - 1)   # nearest analysed row
+        rows = slice(max(0, r0 - SNAP), r0 + SNAP + 1)
+        cols = slice(max(0, u - SNAP), u + SNAP + 1)
+        stand_out = (self.band - self.light)[rows, cols]   # how much brighter than the road around it
+        r, c = np.unravel_index(int(np.argmax(stand_out)), stand_out.shape)
+        r, c = r + rows.start, c + cols.start              # the snapped line pixel
+        paint = float(self.band[r, c])                     # paint brightness there
+        road = float(self.light[r, c])                     # road brightness around it
         if paint - road < 8:
-            self.why = f"That spot ({paint:.0f}) is not brighter than the road ({road:.0f}). Please click a white line."
+            self.why = 'No lane line near your click. Click on (or right next to) a grey line, or press H.'
             return False
+        self.snapped = (c, r + BAND.start, self.steps)     # shown as a green circle for a moment
         threshold = (paint + road) / 2                     # halfway between road and paint
         self.memory[round(road, 1)] = threshold            # part 3: remember it for this light level
         self.clicks.append(int(self.laps))
@@ -481,18 +495,29 @@ def render(lighting, car):
 
     # Right-hand panel: camera image, what the vision found, and the explanation
     panel = np.zeros((560, 380, 3), np.uint8)
+    needs_click = car.status in ('ASKING', 'SAFE STOP')
     if car.cam is not None:
-        panel[25:205, 5:245] = cv2.resize(car.cam, (240, 180))
-        seen = np.zeros((CAM_H, CAM_W, 3), np.uint8)
+        cam = car.cam
+        if needs_click:                                    # "night view": brighten dark areas so
+            gray = cv2.cvtColor(cam, cv2.COLOR_BGR2GRAY)    # the human can see the lines to click
+            cam = cv2.cvtColor(cv2.createCLAHE(4.0, (4, 4)).apply(gray), cv2.COLOR_GRAY2BGR)
+        panel[25:205, 5:245] = cv2.resize(cam, (240, 180))
+        seen = cam.copy() if needs_click else np.zeros((CAM_H, CAM_W, 3), np.uint8)
         seen[BAND][car.mask] = (255, 255, 255)
         seen[BAND.start, :] = seen[BAND.stop - 1, :] = (0, 220, 255)   # analysed band
         panel[230:410, 5:245] = cv2.resize(seen, (240, 180), interpolation=cv2.INTER_NEAREST)
-    if car.status == 'ASKING':                             # red frame: "click here!"
-        cv2.rectangle(panel, (3, 228), (247, 412), (0, 0, 255), 3)
-        text(panel, 'CLICK A WHITE LINE BELOW', 223, (80, 80, 255))
+        if car.snapped and car.steps - car.snapped[2] < 25:   # where the last click snapped to
+            for top in (25, 230):
+                cv2.circle(panel, (5 + int(car.snapped[0] * 1.5), top + int(car.snapped[1] * 1.5)),
+                           10, (0, 255, 0), 2, cv2.LINE_AA)
+    if needs_click:                                        # red frames: "click here!"
+        for top in (25, 230):
+            cv2.rectangle(panel, (3, top - 2), (247, top + 182), (0, 0, 255), 3)
+        text(panel, 'NIGHT VIEW: click near a grey line', 18, (80, 80, 255))
+        text(panel, 'either picture works  (or press H)', 223, (80, 80, 255))
     else:
+        text(panel, 'Camera (what the car sees)', 18)
         text(panel, 'Vision: detected lane paint', 223)
-    text(panel, 'Camera (what the car sees)', 18)
     mem = '  '.join(f'{k:.0f}->{v:.0f}' for k, v in sorted(car.memory.items(), reverse=True))
     text(panel, f'{car.brain.upper()} brain    help clicks: {len(car.clicks)}', 428, (255, 200, 120))
     text(panel, f'Memory (road light -> threshold): {mem}', 446, (255, 200, 120), 0.4)
@@ -511,6 +536,18 @@ def render(lighting, car):
 WINDOW = 'Vision-Guided Lane-Following Car'
 
 
+def panel_to_camera(mx, my):
+    """Window pixel -> camera pixel, for a click on the camera picture (top)
+    or the vision picture (bottom) of the right panel; None elsewhere.
+    Both pictures are the camera view shown 1.5x bigger (240 x 180)."""
+    if not 725 <= mx < 965:
+        return None
+    for top in (25, 230):
+        if top <= my < top + 180:
+            return int((mx - 725) * CAM_W / 240), int((my - top) * CAM_H / 180)
+    return None
+
+
 def main(scenario='2'):
     brain, auto_help, paused, road_seed = 'smart', False, False, 1
 
@@ -521,9 +558,10 @@ def main(scenario='2'):
     car = Car(brain, lighting.track)
 
     def on_mouse(event, mx, my, flags, param):
-        """A click on the 'vision' picture (right panel) answers the car's help request."""
-        if event == cv2.EVENT_LBUTTONDOWN and 725 <= mx < 965 and 230 <= my < 410:
-            car.teach(int((mx - 725) * CAM_W / 240), int((my - 230) * CAM_H / 180))
+        """A click on either picture in the right panel answers the car's help request."""
+        spot = panel_to_camera(mx, my)
+        if event == cv2.EVENT_LBUTTONDOWN and spot:
+            car.teach(*spot)
 
     cv2.namedWindow(WINDOW)
     cv2.setMouseCallback(WINDOW, on_mouse)
