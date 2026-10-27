@@ -29,6 +29,7 @@ The whole program is **one Python file (about 400 lines)** using only two librar
 | 6 | **Novel feature:** ask, learn, remember | `Car.step()`, `teach()`, `thresholds()` | "Add novel feature…" |
 | 7 | Scenarios and measurement | `run_to_end()`, `compare()` | "Add three scenarios…" |
 | 8 | Window, keys and mouse | `render()`, `main()` | across commits |
+| 9 | Random roads, many tunnels, surprise dark patches | `Track`, `random_road_world()` | "Add random roads…" |
 
 You can see each step's exact changes on GitHub: **Commits** → click a commit.
 
@@ -119,7 +120,9 @@ The yellow box drawn on the map in the window is exactly the area this function 
 ```python
 gray = cv2.cvtColor(self.cam, cv2.COLOR_BGR2GRAY).astype(np.float32)      # colour -> brightness
 gray = np.clip(gray + self.rng.normal(0, NOISE, gray.shape), 0, 255).astype(np.uint8)  # sensor noise
-self.band = cv2.GaussianBlur(gray, (5, 5), 0)[BAND].astype(np.float32)     # blur, keep rows 40-99
+smooth = cv2.GaussianBlur(gray, (5, 5), 0)
+self.band = smooth[BAND].astype(np.float32)               # the rows we analyse
+self.light = local_light(smooth)[BAND].astype(np.float32)  # light around each of their pixels
 ```
 
 | Operation | Why |
@@ -128,18 +131,27 @@ self.band = cv2.GaussianBlur(gray, (5, 5), 0)[BAND].astype(np.float32)     # blu
 | Add noise (`NOISE = 3`) | Real cameras are a little noisy; makes the test honest |
 | Gaussian blur 5 × 5 | Smooths the noise so single noisy pixels don't look like paint |
 | `BAND = slice(40, 100)` | Only look at **60 rows, 30 to 90 px ahead**, like a driver looking a little ahead |
+| `local_light` (31 × 31 median) | How bright the road is **around each pixel** (used by the memory, step 6) |
 
 ### 3b. Mark the paint pixels: the threshold
 
 ```python
 FACTORY_THRESHOLD = 180
+LIGHT_WINDOW = 31
 
 def line_mask(band, thresholds):
-    return band > thresholds[:, None]          # True where a pixel is brighter than its row's threshold
+    return band > thresholds          # True where a pixel is brighter than its own threshold
+
+def local_light(gray):
+    return cv2.medianBlur(gray, LIGHT_WINDOW)   # median of the 31 x 31 area around each pixel
 ```
 
 The result is a grid of **True/False**: True = "this pixel is lane paint".
-(Each row can have its own threshold. That matters later for the memory feature.)
+Every pixel can have its own threshold. That matters later for the memory feature.
+
+**Why a 31 × 31 median is "the road around a pixel":** a lane line is only 5 px wide,
+so in any 31 × 31 area most pixels are road (or grass). The middle value (median) is
+therefore road brightness, even right on top of a line.
 
 ### 3c. From paint pixels to the lane middle and a confidence score
 
@@ -182,8 +194,8 @@ self.y += self.speed * math.sin(self.th)
 **Scoring (the car never sees this):**
 
 ```python
-on_road = 0 <= xi < W and 0 <= yi < H and ROAD[yi, xi] > 0
-self.errors.append(DIST_MIDDLE[yi, xi] if on_road else ROAD_HALF)
+on_road = 0 <= xi < W and 0 <= yi < H and self.track.road[yi, xi] > 0
+self.errors.append(self.track.dist_middle[yi, xi] if on_road else ROAD_HALF)
 if not on_road:            self.status = 'OFF ROAD'      # crash
 elif self.laps >= LAPS_GOAL: self.status = 'FINISHED'    # 2 laps done
 ```
@@ -211,8 +223,15 @@ class Lighting:
             light[:, self.tunnel[0]:] = self.tunnel[1]  # e.g. 0.2 = 20% light in the tunnel
         if self.storm_on:
             light *= self.storm[1]                      # e.g. 0.3 = whole world at 30%
-        return (WORLD * light[..., None]).astype(np.uint8)   # darken the picture
+        lit = self.track.world * light[..., None]       # darken the picture
+        return np.clip(lit, 0, 255).astype(np.uint8)    # cap at 255: brighter than white is white
 ```
+
+(The real `scene()` also adds the tunnels, patchy light and surprise patches from step 9.)
+
+**A real bug we hit:** without `np.clip`, a spot 15% brighter than daylight turned
+white paint (255 × 1.15 = 293) into a **dark** pixel, because 8-bit pixels wrap
+around above 255 (293 − 256 = 37). The cap fixes it.
 
 **In simple words:** we multiply every pixel's brightness by a "light level".
 Paint 255 × 0.2 = **51**. Road 60 × 0.2 = **12**. Now nothing is brighter than 180,
@@ -234,6 +253,9 @@ vision and steering. Only the smart car has the three parts below.
 ```python
 ASK_BELOW = 0.25
 if self.brain == 'smart' and self.confidence < ASK_BELOW:
+    if self.just_taught:            # a click did not bring the lines back:
+        self.status = 'SAFE STOP'   # don't ask forever, stay stopped (fault tolerance)
+        return
     self.status = 'ASKING'          # stop moving; step() does nothing until a click
     self.why = 'I cannot see the lane ... Please click a white lane line in my camera view.'
     return
@@ -241,29 +263,33 @@ if self.brain == 'smart' and self.confidence < ASK_BELOW:
 
 The basic car has no such check: with no lines found it sets `error = 0` and drives straight.
 
+**Fault tolerance:** if the car was *just* taught and is still blind, one click wasn't
+enough (for example, it's too dark for anyone to see the paint). It then stops safely
+instead of asking again and again forever.
+
 ### 6b. Learn: one click → a new threshold
 
 ```python
 def teach(self, u, v):                                # (u, v) = clicked camera pixel
     row = self.band[v - BAND.start]                   # that row of the picture
     paint = float(row[max(0, u - 3):u + 4].max())     # brightest pixel near the click (≈ 51)
-    road = float(np.median(row))                      # typical pixel in the row = road (≈ 12)
+    road = float(self.light[v - BAND.start, u])       # road brightness around the click (≈ 12)
     if paint - road < 8:
         return False                                  # not brighter than the road: reject click
     threshold = (paint + road) / 2                    # halfway: (51 + 12) / 2 ≈ 32
     self.memory[round(road, 1)] = threshold           # 6c: remember it for this light level
-    self.status = 'driving'
+    self.status, self.just_taught = 'driving', True
     return True
 ```
 
-**Why the median is the road:** in one row, most pixels are road and only a few are
-paint, so the middle value (median) is almost always a road pixel.
+**Why "the light around the click" is the road:** it is the 31 × 31 median from step 3,
+and in that area most pixels are road, not paint.
 
 **Why halfway:** the threshold must sit **between** road and paint. Halfway gives the
 most room for noise on both sides.
 
 After the click the car drives on, and **the very next picture re-checks confidence**.
-If it's still below 25%, it asks again.
+If it's still below 25%, it stops safely (see 6a).
 
 ### 6c. Remember: memory by light level
 
@@ -271,24 +297,27 @@ If it's still below 25%, it asks again.
 self.memory = {60.0: 180.0}       # start: daylight road 60 -> threshold 180 (factory)
 # after one click in the tunnel:  {60.0: 180.0, 12.0: 31.5}
 
-def thresholds(self, band):
-    levels = np.array(list(self.memory))                    # [60, 12]
-    values = np.array(list(self.memory.values()))           # [180, 31.5]
-    road = row_light(band)[:, None]                         # road brightness of EACH row
-    distance = np.abs(road - levels[None, :])               # how close each row is to each memory
-    distance[values[None, :] <= road + 1] = np.inf          # sanity check: never pick a threshold
+def thresholds(self, light):                                # light = road brightness around each pixel
+    levels = np.array(list(self.memory), np.float32)        # [60, 12]
+    values = np.array(list(self.memory.values()), np.float32)  # [180, 31.5]
+    road = light[..., None]                                 # rows x columns x 1
+    distance = np.abs(road - levels)                        # how close each pixel's light is to each memory
+    distance[values <= road + 1] = np.inf                   # sanity check: never pick a threshold
                                                             # that isn't brighter than the road
-    return values[distance.argmin(axis=1)]                  # closest memory, row by row
+    return values[distance.argmin(axis=2)]                  # closest memory, pixel by pixel
 ```
 
-**In simple words:** for every row of the picture, the car measures how bright the road
-is and picks the remembered threshold whose light level is **closest**.
-- Daylight row (road ≈ 60) → uses **180**.
-- Tunnel row (road ≈ 12) → uses **32**, so **no click is needed on lap 2**.
-- Storm row (road ≈ 18) → closest is 12 → uses **32**. Learning **transfers** to new places.
+**In simple words:** for every pixel of the picture, the car looks at how bright the
+road is around it and picks the remembered threshold whose light level is **closest**.
+- Daylight spot (road ≈ 60) → uses **180**.
+- Tunnel spot (road ≈ 12) → uses **32**, so **no click is needed on lap 2**.
+- Storm spot (road ≈ 18) → closest is 12 → uses **32**. Learning **transfers** to new places.
 
-Choosing **per row** means a picture that is half daylight and half tunnel (at the
-tunnel entrance) still works.
+**Why per pixel and not per row (a real bug we fixed):** we first chose one threshold
+per row. On curvy roads a tunnel edge can cut **diagonally** across the picture, so one
+row was half dark and half bright. The dark-light threshold (37) then turned the bright
+road (60) into "paint": over 600 false paint pixels, and the car crashed. Judging the
+light around each pixel separately fixed it.
 
 **Sanity check (a real bug we fixed):** a remembered threshold darker than the current
 road would make the whole road look like paint. We skip those. This removed the last crash.
@@ -346,6 +375,58 @@ if 725 <= mx < 965 and 230 <= my < 410:                    # click inside the "v
 
 ---
 
+## Step 9: Random roads, many tunnels, surprise dark patches
+
+**Goal:** stop the car from "only working on one oval", and test it on mixed,
+changing light, so the results are fault tolerant and not luck.
+
+### 9a. A random road shape (`random_road_points`, `Track`)
+
+```python
+t = np.linspace(-np.pi / 2, 1.5 * np.pi, 720, endpoint=False)    # 720 points around the loop
+r = np.ones_like(t)
+for k in (2, 3, 4):                                               # 3 random "waves"
+    r += rng.uniform(0, 0.14) * np.cos(k * t + rng.uniform(0, 2 * np.pi))
+x, y = CENTER[0] + AXES[0] * r * np.cos(t), CENTER[1] + AXES[1] * r * np.sin(t)
+```
+
+- Start from the oval and **wobble its radius** with 3 random waves, giving a different curvy loop each time.
+- The bend radius is checked; shapes with a bend sharper than **130 px** are re-drawn (`MIN_BEND_RADIUS`).
+- The **seed** number fixes the randomness: road #3 is always the same road #3, so tests are repeatable.
+- `Track` draws it with `cv2.polylines`: a 96 px grey road, then a wide white band,
+  then a slightly narrower grey band on top, which leaves **two white lines**.
+
+### 9b. Several tunnels with mixed light (`random_road_world`)
+
+- **3 to 5 tunnels** spread around the road: *open road → tunnel → open road → tunnel …*
+- Each has its **own darkness** (12% to 70% light) and its own length.
+- Entrances **fade** over 10° (`ZONE_FADE`), so light changes gradually, not as on/off steps.
+- A **patchy ±15% light pattern** covers everything (like light through trees).
+
+```python
+mix = np.clip((width / 2 + ZONE_FADE - off) / (2 * ZONE_FADE), 0, 1)   # 0 outside, 1 inside, fades between
+light = light * (1 - mix) + brightness * mix                            # overlapping tunnels blend
+```
+
+### 9c. Surprise dark patches while driving
+
+```python
+self.surprises = [(from_step, to_step, x, y, radius, brightness), ...]   # 3 per random road
+```
+
+- Each patch **appears at a random step**, stays 150 to 400 steps, then **goes away**.
+- It sits somewhere **on the road**, with a radius of 50 to 110 px and 8% to 50% light, and soft edges.
+- `update(step)` switches patches on and off. The map draws a pink circle around active ones.
+- **Key P** drops a patch 140 px in front of the car during a live demo.
+
+### 9d. What it showed (and fixed)
+
+These harder worlds found **three real bugs**, now fixed: the 255 overflow (step 5),
+per-row light failing on diagonal edges (step 6c), and the car asking forever when a
+click didn't help (step 6a). See README section 6 for the measured results.
+
+---
+
 ## Settings you can change (try them!)
 
 | Setting | Where | Default | What happens if you change it |
@@ -356,6 +437,10 @@ if 725 <= mx < 965 and 230 <= my < 410:                    # click inside the "v
 | `SPEED` | top of file | 4.0 | Faster car, less time to react |
 | Tunnel darkness | `SCENARIOS['2']` | 0.2 | Darker tunnel; below about 0.05 even a click can't help |
 | `FACTORY_THRESHOLD` | section 3 | 180 | The basic rule; lower helps in the dark but can mistake road for paint |
+| `LIGHT_WINDOW` | section 3 | 31 | Area used to judge the light around a pixel; must stay much wider than a 5 px line |
+| `MIN_BEND_RADIUS` | section 1 | 130 | Sharper allowed bends make random roads harder to drive |
+| `ZONE_FADE` | section 1 | 10° | How gradually tunnel entrances fade; 0 gives hard on/off edges |
+| `surprises` | `random_road_world()` | 3 | More surprise dark patches per road |
 
 After changing something, run `python lane_car.py --compare` to see the effect in numbers.
 

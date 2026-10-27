@@ -299,15 +299,37 @@ There are two meanings of "novelty":
 | Memory reduces repeated help | Live: lap 2 passes the tunnel with no click; the "help clicks" counter stays at 1 |
 | The car still completes its task | `--compare`: completed laps, not just crashes |
 
-**Measured results.** We reproduced these by running `python lane_car.py --compare`
-on OpenCV 4.13 and 5.0, with the same numbers both times:
+**Measured results.** Run `python lane_car.py --compare` (about 3 minutes) to reproduce these:
 
-| 30 random dark worlds | Basic car | Our car |
+| 30 random dark worlds (oval, tunnel + storm) | Basic car | Our car |
 |---|---|---|
 | Crashed | 30 / 30 | **0 / 30** |
-| Finished 2 laps | 0 / 30 | **27 / 30** |
-| Safe stop (too dark even with help) | 0 | 3 / 30 |
-| Help clicks lap 1 / lap 2 | – | 31 / 13 |
+| Finished 2 laps | 0 / 30 | **28 / 30** |
+| Safe stop (too dark even with help) | 0 | 2 / 30 |
+| Help clicks lap 1 / lap 2 | – | 32 / 13 |
+
+| 30 random roads (3–5 tunnels each, patchy light, surprise dark patches) | Basic car | Our car |
+|---|---|---|
+| Crashed | 30 / 30 | **0 / 30** |
+| Finished 2 laps | 0 / 30 | **30 / 30** |
+| Help clicks lap 1 / lap 2 | – | 51 / 3 |
+
+The second test has **124 tunnels in total, but needed only 51 clicks**, because
+tunnels with similar light share one memory. This is the memory transferring to new
+places, measured.
+
+### Why random roads, many tunnels and surprise patches?
+
+A car that works on **one oval** might just be lucky with that one shape. So we also test:
+- **random road shapes:** a different curvy loop every time (`G` key for a new one);
+- **3 to 5 tunnels per road**, each with **its own darkness** (open road → tunnel → open road …);
+- **mixed light:** tunnel entrances fade in gradually, and patchy ±15% light covers everything;
+- **surprise dark patches** that appear and disappear **while the car is driving** (`P` key drops one in front of it).
+
+These harder tests found and fixed real weaknesses, which made the car more fault tolerant:
+1. Light is now judged **around each pixel** (31 × 31 area), not per row, so a tunnel
+   edge that cuts diagonally across the picture can't fool it.
+2. If one click doesn't bring the lines back, the car **stops safely** instead of asking forever.
 
 Why completed laps matter: a car could avoid every crash by **never moving**. So we
 report finished laps too, not only crashes.
@@ -324,12 +346,12 @@ report finished laps too, not only crashes.
 
 ## 12. Limitations (say these confidently)
 
-- It's a **simulation**: a flat oval road, clean white paint, a top-down camera, simple noise.
+- It's a **simulation**: a flat road (oval or random smooth loop), clean white paint, a top-down camera, simple noise.
 - Real roads have glare, rain, faded paint and shadows that cross the lane.
 - It needs a **human nearby** to click (a real car could ask a remote operator).
 - Memory is **lost when the program closes**.
 - The 25% confidence rule and the "halfway" threshold are **simple design choices**, not proven optimal.
-- In 3 of 30 random worlds it was too dark even with help, so the car **stopped safely** but could not finish.
+- In 2 of 30 random oval worlds (tunnel plus storm) it was too dark even with help, so the car **stopped safely** but could not finish.
 
 ---
 
@@ -337,4 +359,4 @@ report finished laps too, not only crashes.
 
 > A simulated self-driving car that **notices when its vision fails**, **stops instead
 > of crashing**, **learns a new vision setting from one human click**, and **remembers
-> it for similar lighting**. In 30 random dark worlds, crashes went from 30 to 0.
+> it for similar lighting**. In 60 random test worlds, crashes went from 60 to 0.

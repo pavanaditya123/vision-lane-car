@@ -108,6 +108,8 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 | 3 | **Click** a grey line inside the red box | Message: "paint 51, road 12, new threshold 32" | "One click. It learned the new threshold and continues through the tunnel." |
 | 4 | Let it drive to lap 2 | Passes the tunnel **without stopping**; help clicks stay at 1 | "Lap 2: no question this time. It remembered." |
 | 5 | Press `N` (storm) | The whole world gets darker | "Now the environment changes: a storm. Watch: it adapts, or asks once for this new light, then continues." |
+| 6 | Press `4`, then `H` (auto-help) | A **random curvy road** with 3 to 5 labelled tunnels (T1 25%, T2 60% …) | "It's not memorising one oval. Every road is new, with tunnels of different darkness. Similar tunnels share one memory, so it needs fewer clicks than tunnels." |
+| 7 | Press `P` | A pink circle: a **dark patch drops right in front of the car** | "A surprise while driving. It handles it, or asks once, and never drives blind." Press `G` for another new road if time allows. |
 
 **Notes for C:**
 - If the click misses, the car says "Please click a white line"; just click again on the grey line.
@@ -120,12 +122,12 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 | Metric (30 random dark worlds) | Basic | Ours |
 |---|---|---|
 | Crashed | **30 / 30** | **0 / 30** |
-| Finished 2 laps | 0 / 30 | **27 / 30** |
-| Safe stop (too dark even with help) | 0 | 3 / 30 |
-| Help clicks lap 1 / lap 2 | – | 31 / 13 |
+| Finished 2 laps | 0 / 30 | **28 / 30** |
+| Safe stop (too dark even with help) | 0 | 2 / 30 |
+| Help clicks lap 1 / lap 2 | – | 32 / 13 |
 
 **Say:**
-> "To be fair we tested both cars on the same 30 random worlds, each with a random tunnel and often a storm at a random time. The basic car crashed every time. Our car never crashed. It finished 27 worlds. In 3 worlds it was so dark that even a human couldn't see the paint, so it stayed stopped, which is the safe choice. And it needed fewer clicks on lap 2 than on lap 1, because it remembered. The clicks on lap 2 happen only when a storm came during lap 2, bringing new lighting."
+> "To be fair we tested both cars on the same 30 random worlds, each with a random tunnel and often a storm at a random time. The basic car crashed every time. Our car never crashed. It finished 28 worlds. In 2 worlds it was so dark that even a human couldn't see the paint, so it stayed stopped, which is the safe choice. We also tested 30 random curvy roads, each with 3 to 5 tunnels of different darkness and surprise dark patches: the basic car crashed on all 30, ours finished all 30. Those roads had 124 tunnels but needed only 51 clicks, because similar tunnels share one memory. And it needed fewer clicks on lap 2 than on lap 1, because it remembered. The clicks on lap 2 happen only when a storm came during lap 2, bringing new lighting."
 
 **Notes for C:**
 - The whole test takes about 40 seconds. Run it before class, not live.
@@ -145,7 +147,7 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 | Why remember by light level instead of by place? | **Hartik** | Light level transfers: what it learned in the tunnel also works in a storm with similar light, even in a new place. |
 | Why 25% confidence? | **Hartik** | Below 25% it sees lines in fewer than 1 in 4 rows, which is too little to steer safely. It's a design choice; we could tune it. |
 | Is it really novel? | **M. Pavan Aditya** | The pieces exist (asking for help, remembering failures, slowing down when unsure). We found no work combining one-click learning with memory by light level. We show the closest works in our README. |
-| Why 3 safe stops? | **Zafar Mohammad** | The tunnel plus storm made the paint almost as dark as the road (brightness 6 vs 2). Nobody could see it, so stopping is correct. |
+| Why 2 safe stops? | **Zafar Mohammad** | The tunnel plus storm made the paint almost as dark as the road (brightness 6 vs 2). Nobody could see it, so stopping is correct. |
 | Does it work on a real car? | **Zafar Mohammad** | Not tested. It's a simulation. Next steps: real camera images, curved and faded lines, a remote operator instead of a mouse click. |
 
 ## How to prepare tonight (about 30 minutes each)
