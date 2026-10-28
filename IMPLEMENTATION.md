@@ -442,7 +442,8 @@ self.surprises = [(from_step, to_step, x, y, radius, brightness), ...]   # 3 per
 - Each patch **appears at a random step**, stays 150 to 400 steps, then **goes away**.
 - It sits somewhere **on the road**, with a radius of 50 to 110 px and 8% to 50% light, and soft edges.
 - `update(step)` switches patches on and off. The map draws a pink circle around active ones.
-- **Key P** drops a patch 140 px in front of the car during a live demo.
+- **Key P** drops a patch 140 px in front of the car during a live demo. Keys **-** and **+** make it
+  darker or lighter (5% to 60% light), live, via `change_patch_level()`.
 
 ### 9d. What it showed (and fixed)
 

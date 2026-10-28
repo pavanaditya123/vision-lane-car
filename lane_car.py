@@ -16,6 +16,7 @@ Run:   python lane_car.py             (live demo, starts in scenario 2)
        python lane_car.py --compare   (measure Basic vs Smart, no window)
 Keys:  1 / 2 / 3 / 4 load scenario   G new random road   SPACE pause   R restart   Q quit
        T toggle dark tunnel   N toggle storm (world gets dark)   P drop a dark patch ahead
+       - make the P patch darker   + make it lighter (5% to 60% light, changes live)
        B switch Basic/Smart brain   H auto-help (simulated human clicks for you)
 Mouse: when the car asks for help, click NEAR a grey lane line in either
        picture on the right (it snaps to the line within 20 px).
@@ -112,6 +113,7 @@ class Lighting:
         self.surprises = list(surprises)   # [(from_step, to_step, x, y, radius, brightness)]: dark patches
         self.patches = []                  # the surprise patches showing right now
         self.manual = None                 # the patch dropped with the P key (only one at a time)
+        self.patch_level = 0.3             # its light level, changed live with keys - and +
         self.storm_on = False
         self.news = ('A dark tunnel covers the right bend.' if tunnel else
                      f'{len(self.zones)} tunnels: ' + ', '.join(f'{b:.0%}' for _, _, b in self.zones) + ' light'
@@ -130,13 +132,25 @@ class Lighting:
                          else 'A dark patch went away.')
             self.patches, self._scene = showing, None
 
-    def drop_patch(self, x, y, step, brightness=0.3):
-        """Live demo (key P): a dark patch appears right now, 140 px in front of the car.
-        Only one P-patch at a time: pressing P again moves it, instead of stacking."""
+    def drop_patch(self, x, y, step):
+        """Live demo (key P): a dark patch appears right now, 140 px in front of the car,
+        at the chosen darkness (keys - and +). Only one P-patch at a time:
+        pressing P again moves it, instead of stacking."""
         self.surprises = [s for s in self.surprises if s is not self.manual]
-        self.manual = (step, step + 300, x, y, 70.0, brightness)
+        self.manual = (step, step + 300, x, y, 70.0, self.patch_level)
         self.surprises.append(self.manual)
         self.update(step)
+
+    def change_patch_level(self, change, step):
+        """Live demo (keys - and +): make the P-patch darker or lighter, 5% at a time
+        (5% = almost black, 60% = light shade). A patch already on the road changes at once."""
+        self.patch_level = round(min(0.6, max(0.05, self.patch_level + change)), 2)
+        if self.manual in self.surprises:                  # update the patch that is showing
+            i = self.surprises.index(self.manual)
+            self.manual = self.manual[:5] + (self.patch_level,)
+            self.surprises[i] = self.manual
+            self.update(step)
+        self.news = f'P-patch darkness: {self.patch_level:.0%} light   (- darker, + lighter)'
 
     def toggle_tunnel(self):
         self.tunnel = None if self.tunnel else (680, 0.2)
@@ -599,6 +613,10 @@ def main(scenario='2'):
             lighting.toggle_storm()
         if key == ord('p'):                      # drop a surprise dark patch in front of the car
             lighting.drop_patch(car.x + 140 * math.cos(car.th), car.y + 140 * math.sin(car.th), car.steps)
+        if key in (ord('-'), ord('_')):          # make the P-patch darker (live)
+            lighting.change_patch_level(-0.05, car.steps)
+        if key in (ord('+'), ord('=')):          # make the P-patch lighter (live)
+            lighting.change_patch_level(+0.05, car.steps)
     cv2.destroyAllWindows()
 
 

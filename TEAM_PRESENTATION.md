@@ -110,7 +110,7 @@ open a terminal in the project folder, run `python lane_car.py`, then press **SP
 | 4 | Let it drive to lap 2 | Passes the tunnel **without stopping**; help clicks stay at 1 | "Lap 2: no question this time. It remembered." |
 | 5 | Press `N` (storm) | The whole world gets darker | "Now the environment changes: a storm. Watch: it adapts, or asks once for this new light, then continues." |
 | 6 | Press `4`, then `H` (auto-help) | A **random curvy road** with 3 to 5 labelled tunnels (T1 25%, T2 60% …) | "It's not memorising one oval. Every road is new, with tunnels of different darkness. Similar tunnels share one memory, so it needs fewer clicks than tunnels." |
-| 7 | Press `P` | A pink circle: a **dark patch drops right in front of the car** | "A surprise while driving. It handles it, or asks once, and never drives blind." Press `G` for another new road if time allows. |
+| 7 | Press `P` | A pink circle: a **dark patch drops right in front of the car** | "A surprise while driving. It handles it, or asks once, and never drives blind." Press `-` a few times to make the patch darker live (down to 5% light). Tip: drop it just before a bend. Press `G` for another new road if time allows. |
 
 **Notes for C:**
 - If the click is too far from a line, the car says "No lane line near your click"; click closer to a grey line. If the car shows SAFE STOP, you can still click near a line to rescue it, or press `R`.

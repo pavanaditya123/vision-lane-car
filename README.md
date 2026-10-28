@@ -76,6 +76,7 @@ Tested with OpenCV 4.13 and 5.0; both give identical results.
 | `T` | Add or remove the dark tunnel (change the world live) |
 | `N` | Start or stop a storm (change the world live) |
 | `P` | Drop a dark patch right in front of the car (change the world live) |
+| `-` / `+` | Make the P patch **darker** / **lighter** (5% to 60% light), even while it's on the road |
 | `H` | Auto-help: a simulated human clicks for you |
 | `SPACE` | Pause |
 | `R` | Restart |
